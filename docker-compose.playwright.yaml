@@ -20,20 +20,24 @@ services:
       # UI reachable at https://<site>.ddev.site:8078, report at :9324.
       - HTTP_EXPOSE=8077:8077,9323:9323
       - HTTPS_EXPOSE=8078:8077,9324:9323
-      # CMS test-suite variables. Populated in .ddev/.env.playwright only when the
-      # respective CMS is detected (from the project .env, with base URLs falling
-      # back to DDEV_PRIMARY_URL); empty/absent otherwise. Harmless for any other
-      # project — the add-on core stays CMS-neutral.
-      # Shopware (@shopware-ag/acceptance-test-suite):
-      # https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html
-      - APP_URL=${APP_URL:-}
-      - SHOPWARE_ACCESS_KEY_ID=${SHOPWARE_ACCESS_KEY_ID:-}
-      - SHOPWARE_SECRET_ACCESS_KEY=${SHOPWARE_SECRET_ACCESS_KEY:-}
-      # WordPress (@wordpress/e2e-test-utils-playwright):
-      # https://developer.wordpress.org/news/2026/05/getting-started-writing-wordpress-e2e-tests-with-playwright/
-      - WP_BASE_URL=${WP_BASE_URL:-}
-      - WP_USERNAME=${WP_USERNAME:-}
-      - WP_PASSWORD=${WP_PASSWORD:-}
+    # CMS test-suite variables (Shopware @shopware-ag/acceptance-test-suite,
+    # WordPress @wordpress/e2e-test-utils-playwright) are read DIRECTLY from the
+    # project's own env files, so credentials live in exactly ONE place:
+    # .env / .env.local / .env.test. `env_file` entries are merged in order (later
+    # wins), matching Symfony precedence (.env < .env.local < .env.test). All are
+    # optional (required:false) so non-CMS projects and missing files never break
+    # `ddev start`. The base-URL fallback file is FIRST so a real APP_URL / WP_BASE_URL
+    # in the project env overrides it. PLAYWRIGHT_CMS_ENV_DIR is the app's env dir,
+    # resolved by the pre-start hook (works whether the app is in the root or a subfolder).
+    env_file:
+      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.ddev-playwright-fallback.env
+        required: false
+      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env
+        required: false
+      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env.local
+        required: false
+      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env.test
+        required: false
     # These labels ensure this service is discoverable by DDEV.
     labels:
       com.ddev.site-name: ${DDEV_SITENAME}
