@@ -16,8 +16,10 @@ permissions:
   contents: write
 
 jobs:
-  # 1) Run the complete bats suite (including the @release-tagged test) against a
-  #    matrix of DDEV versions. This is the gate.
+  # 1) Run the bats suite against a matrix of DDEV versions. This is the gate.
+  #    The @release test is skipped here: it installs the latest GitHub release,
+  #    which doesn't exist yet at this point (the release job runs afterwards).
+  #    The @release test runs in the regular tests.yml instead.
   test:
     strategy:
       matrix:
@@ -31,6 +33,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           addon_repository: ${{ github.repository }}
           addon_ref: ${{ github.ref_name }}
+          test_command: "bats tests --filter-tags '!release'"
 
   # 2) Only runs if ALL matrix test jobs succeeded. Creates the GitHub release.
   release:
