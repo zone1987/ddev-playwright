@@ -53,8 +53,9 @@ playwright:
 
   # --- Shopware (optional) ------------------------------------------------------
   # Shopware projects get the @shopware-ag/acceptance-test-suite installed and the
-  # SHOPWARE_* / APP_URL variables forwarded from your project .env automatically.
-  # Variable names & suite per the official Shopware guide:
+  # SHOPWARE_ACCESS_KEY_ID / SHOPWARE_SECRET_ACCESS_KEY (integration auth) + APP_URL
+  # forwarded from your project .env automatically. Create the integration under
+  # Settings > System > Integrations in the Shopware admin. Source:
   #   https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html
   #
   # Detection is automatic (a composer.json requiring shopware/core in the project

@@ -2,8 +2,8 @@
 #ddev-generated
 #
 # Resolve the Playwright add-on configuration on the HOST, before DDEV renders
-# the docker-compose file. Reads .ddev/playwright/playwright.yaml (deep-merged on
-# top of .ddev/playwright/defaults.yaml) and writes two generated files:
+# the docker-compose file. Reads .ddev/playwright.yaml (deep-merged on top of
+# .ddev/playwright/defaults.yaml) and writes two generated files:
 #
 #   .ddev/.env.playwright         -> PLAYWRIGHT_DOCKER_IMAGE / PLAYWRIGHT_VERSION
 #                                    (consumed by docker-compose interpolation)
@@ -25,8 +25,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
 PW_DIR="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"   # .ddev/playwright
 DDEV_DIR="$(cd "${PW_DIR}/.." >/dev/null 2>&1 && pwd)"     # .ddev
 
-# User-editable config + shipped defaults live under .ddev/playwright/.
-USER_CONFIG="${PW_DIR}/playwright.yaml"
+# The user-editable config lives prominently at .ddev/playwright.yaml; the shipped
+# defaults it is merged onto stay in .ddev/playwright/.
+USER_CONFIG="${DDEV_DIR}/playwright.yaml"
 DEFAULTS_CONFIG="${PW_DIR}/defaults.yaml"
 # The resolved manifest lives beside them.
 MANIFEST_FILE="${PW_DIR}/paths.json"
@@ -261,17 +262,16 @@ env_value() {
     | tail -n1 | strip_cr | sed 's/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//'
 }
 
-# Shopware acceptance-test-suite variables. Source:
+# Shopware acceptance-test-suite variables. Integration auth only
+# (SHOPWARE_ACCESS_KEY_ID / SHOPWARE_SECRET_ACCESS_KEY). Source:
 # https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html
 SW_APP_URL=""
-SW_AKID=""; SW_SAK=""; SW_USER=""; SW_PASS=""
+SW_AKID=""; SW_SAK=""
 if [ "${IS_SHOPWARE}" = "true" ]; then
   SW_APP_URL="$(env_value 'APP_URL')"
   [ -z "${SW_APP_URL}" ] && SW_APP_URL="${DDEV_PRIMARY_URL:-}"
   SW_AKID="$(env_value 'SHOPWARE_ACCESS_KEY_ID')"
   SW_SAK="$(env_value 'SHOPWARE_SECRET_ACCESS_KEY')"
-  SW_USER="$(env_value 'SHOPWARE_ADMIN_USERNAME')"
-  SW_PASS="$(env_value 'SHOPWARE_ADMIN_PASSWORD')"
 fi
 
 # WordPress @wordpress/e2e-test-utils-playwright variables. Tests run against the
@@ -300,8 +300,6 @@ fi
     printf 'APP_URL=%s\n' "${SW_APP_URL}"
     printf 'SHOPWARE_ACCESS_KEY_ID=%s\n' "${SW_AKID}"
     printf 'SHOPWARE_SECRET_ACCESS_KEY=%s\n' "${SW_SAK}"
-    printf 'SHOPWARE_ADMIN_USERNAME=%s\n' "${SW_USER}"
-    printf 'SHOPWARE_ADMIN_PASSWORD=%s\n' "${SW_PASS}"
   fi
   if [ "${IS_WORDPRESS}" = "true" ]; then
     printf 'WP_BASE_URL=%s\n' "${WP_BASE_URL}"

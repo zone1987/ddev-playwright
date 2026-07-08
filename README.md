@@ -65,9 +65,8 @@ Commit the `.ddev` directory to version control afterwards.
 
 ## Configuration
 
-All configuration lives in `.ddev/playwright/playwright.yaml`. Every key is optional — missing keys
-fall back to the shipped defaults, so a file with only `version` still inherits the default
-`searchPaths`.
+All configuration lives in `.ddev/playwright.yaml`. Every key is optional — missing keys fall back
+to the shipped defaults, so a file with only `version` still inherits the default `searchPaths`.
 
 ```yaml
 version: 1
@@ -198,18 +197,27 @@ subfolder). When detected, the add-on installs
 [`@shopware-ag/acceptance-test-suite`](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html)
 on `ddev playwright install` and forwards the suite's variables into the container.
 
-Set these (all optional) in your project `.env` — variable names per the
+Authentication uses a Shopware **integration** (API access key + secret). Set these in your project
+`.env` — variable names per the
 [Shopware E2E guide](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html):
 
 ```bash
-# Authentication via integration
 SHOPWARE_ACCESS_KEY_ID="<your-shopware-integration-id>"
 SHOPWARE_SECRET_ACCESS_KEY="<your-shopware-integration-secret>"
-
-# Authentication via admin user
-SHOPWARE_ADMIN_USERNAME="<administrator-user-name>"
-SHOPWARE_ADMIN_PASSWORD="<administrator-user-password>"
 ```
+
+#### Creating the integration in Shopware
+
+To obtain those two values, create an API integration in the Shopware admin:
+
+1. Open the Administration and go to **Settings → System → Integrations**.
+2. Click **Add integration**.
+3. Give it a name (e.g. `playwright-e2e`) and, so it can access the data the tests need, assign the
+   **Administrator** role (or a role with the required privileges).
+4. Save. Shopware shows the **Access key ID** and a **Secret access key** — the secret is displayed
+   **only once**, so copy it immediately.
+5. Put the Access key ID into `SHOPWARE_ACCESS_KEY_ID` and the secret into
+   `SHOPWARE_SECRET_ACCESS_KEY` in your project `.env`, then run `ddev restart`.
 
 `APP_URL` (the suite's base URL) defaults to your project's primary DDEV URL (`DDEV_PRIMARY_URL`); a
 value you set in `.env` always wins. Override detection in `playwright.yaml`:
@@ -325,10 +333,10 @@ ddev playwright test -- --headed --grep "@smoke"
   `mcr.microsoft.com/playwright`. Browsers ship preinstalled in the image; `node_modules` lives in
   a named volume (`playwright-node-modules`), so nothing heavy hits your host or repo. The UI (8077)
   and HTML report (9323) ports are exposed through the DDEV router.
-* **`playwright/playwright.yaml`** — your configuration (see above). `playwright/defaults.yaml`
-  holds the baseline values it is deep-merged onto.
+* **`playwright.yaml`** — your configuration (see above), at `.ddev/playwright.yaml`.
+  `playwright/defaults.yaml` holds the baseline values it is deep-merged onto.
 * **`playwright/bin/resolve-config.sh`** — runs on the host (POSIX-only, no Docker needed). It reads
-  `playwright/playwright.yaml`, derives the image tag into `.ddev/.env.playwright`, and writes the
+  `.ddev/playwright.yaml`, derives the image tag into `.ddev/.env.playwright`, and writes the
   resolved `.ddev/playwright/paths.json` manifest.
 * **`config.playwright.yaml`** — a `pre-start` hook runs the resolver **before** DDEV renders
   docker-compose, so the right image is pulled; a `post-start` hook does a non-fatal version-drift
@@ -343,7 +351,7 @@ ddev playwright test -- --headed --grep "@smoke"
 
 The add-on never breaks `ddev start` and never errors on an "empty" project:
 
-* No `.ddev/playwright/playwright.yaml` → shipped defaults, `:latest` image, empty `searchPaths`.
+* No `.ddev/playwright.yaml` → shipped defaults, `:latest` image, empty `searchPaths`.
 * No test directories / zero instances → `ddev playwright` runs with no projects and exits 0.
 * `searchPaths` pointing at directories that **don't exist** → those paths are skipped silently.
 * Config resolution failure → falls back to the `:latest` image.
