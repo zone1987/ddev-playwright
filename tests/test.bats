@@ -41,10 +41,10 @@ health_checks() {
   assert_success
   assert_output --partial "ok"
 
-  # The browsers ship in the image; the Playwright CLI is available there.
-  run ddev exec -s playwright npx --yes playwright --version
+  # The official image ships the browsers preinstalled under /ms-playwright.
+  run ddev exec -s playwright sh -c 'ls /ms-playwright | grep -c chromium'
   assert_success
-  assert_output --partial "Version"
+  refute_output "0"
 }
 
 teardown() {
@@ -86,10 +86,10 @@ teardown() {
   printf 'PLAYWRIGHT_IMAGE_TAG=v1.56.1-noble\n' > "${TESTDIR}/.ddev/.env"
   run ddev restart -y
   assert_success
-  # The pinned Playwright version is what the CLI reports.
-  run ddev exec -s playwright npx --yes playwright --version
+  # The pin controls the Docker image tag: the running container uses exactly it.
+  run docker inspect --format '{{.Config.Image}}' "ddev-${PROJNAME}-playwright"
   assert_success
-  assert_output --partial "1.56.1"
+  assert_output --partial "mcr.microsoft.com/playwright:v1.56.1-noble"
 }
 
 @test "CLI passthrough works" {
