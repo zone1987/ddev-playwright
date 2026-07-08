@@ -248,18 +248,29 @@ esac
 # container via .env.playwright (DDEV interpolates .ddev/.env.* into docker-compose).
 # Values are read from the project .env if present; base URLs fall back to
 # DDEV_PRIMARY_URL, but a user-set value always wins.
-# The .env may live in a subfolder, so probe both CMS candidate sets.
-PROJECT_ENV=""
+# The .env may live in a subfolder, so probe both CMS candidate sets. We resolve
+# the project .env DIRECTORY (the first candidate that has a .env or .env.local),
+# then read values with Symfony precedence: .env.local overrides .env. This lets
+# users keep secrets (e.g. SHOPWARE_ACCESS_KEY_ID) out of git in .env.local.
+PROJECT_ENV_DIR=""
 for cand in "" ${SW_CANDIDATES} ${WP_CANDIDATES}; do
-  [ -z "${cand}" ] && ef="${PROJECT_ROOT}/.env" || ef="${PROJECT_ROOT}/${cand}/.env"
-  if [ -f "${ef}" ]; then PROJECT_ENV="${ef}"; break; fi
+  [ -z "${cand}" ] && dir="${PROJECT_ROOT}" || dir="${PROJECT_ROOT}/${cand}"
+  if [ -f "${dir}/.env" ] || [ -f "${dir}/.env.local" ]; then PROJECT_ENV_DIR="${dir}"; break; fi
 done
-env_value() {
-  # env_value <KEY> — read KEY=value from the project .env (last wins), strip quotes/CR.
-  key="$1"
-  [ -f "${PROJECT_ENV}" ] || return 0
-  sed -n "s/^[[:space:]]*${key}=//p" "${PROJECT_ENV}" 2>/dev/null \
+env_value_from() {
+  # env_value_from <FILE> <KEY> — read KEY=value from FILE (last wins), strip quotes/CR.
+  file="$1"; key="$2"
+  [ -f "${file}" ] || return 0
+  sed -n "s/^[[:space:]]*${key}=//p" "${file}" 2>/dev/null \
     | tail -n1 | strip_cr | sed 's/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//'
+}
+env_value() {
+  # env_value <KEY> — .env.local takes precedence over .env (Symfony convention).
+  key="$1"
+  [ -n "${PROJECT_ENV_DIR}" ] || return 0
+  val="$(env_value_from "${PROJECT_ENV_DIR}/.env.local" "${key}")"
+  [ -z "${val}" ] && val="$(env_value_from "${PROJECT_ENV_DIR}/.env" "${key}")"
+  printf '%s' "${val}"
 }
 
 # Shopware acceptance-test-suite variables. Integration auth only
