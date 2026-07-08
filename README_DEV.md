@@ -13,17 +13,18 @@ want to *use* the add-on, see [`README.md`](README.md) instead.
 
 ## Repository layout
 
-Files marked `.ddev/` land in the project's `.ddev` directory on install; everything under
-`playwright/` is bundled in the `.ddev/playwright/` subfolder (except the three DDEV-fixed files —
-`config.playwright.yaml`, `docker-compose.playwright.yaml`, `.env.playwright` — which must stay
-directly in `.ddev/`).
+On install these land directly in `.ddev/`: `docker-compose.playwright.yaml`,
+`config.playwright.yaml`, `commands/host/playwright`, and the user-editable `playwright.yaml`. The
+first two MUST stay at the `.ddev/` root — DDEV only loads compose/config files from there, not from
+subfolders. `playwright.yaml` sits there too so it's prominent and easy to edit. Everything else
+(defaults, generated config/manifest, helper scripts) lives under `.ddev/playwright/`.
 
 | Path | Purpose |
 | --- | --- |
 | `install.yaml` | Add-on manifest: which files DDEV installs, plus post-install / removal actions. |
 | `docker-compose.playwright.yaml` | The isolated `playwright` service (official image, UI/report ports, `node_modules` volume, Shopware env passthrough). |
 | `config.playwright.yaml` | `pre-start` hook (resolve version → `.env.playwright`) + `post-start` version-drift warning. |
-| `playwright/playwright.yaml` | The user-facing config, shipped with a `#ddev-generated` marker. |
+| `playwright.yaml` | The user-facing config → `.ddev/playwright.yaml`, shipped with a `#ddev-generated` marker. |
 | `playwright/defaults.yaml` | Baseline defaults that `playwright.yaml` is deep-merged onto. |
 | `playwright/bin/resolve-config.sh` | Host-side resolver: YAML → `.env.playwright` + `playwright/paths.json`. POSIX-only, Shopware detection. |
 | `playwright/bin/discover.mjs` | In-container instance discovery helper (a real file, not inline node, to avoid quote-escaping). |
@@ -39,7 +40,7 @@ The one non-obvious mechanic is **when the Playwright version becomes the Docker
 
 1. `docker-compose.playwright.yaml` interpolates `${PLAYWRIGHT_DOCKER_IMAGE}` from
    `.ddev/.env.playwright` **at container-render time**.
-2. That value is written by `resolve-config.sh`, which reads `playwright/playwright.yaml`.
+2. That value is written by `resolve-config.sh`, which reads `.ddev/playwright.yaml`.
 3. So the resolver must run **before** the container renders. The `pre-start` hook (host-side) is
    exactly that window. Running it in `post-start` would only apply the image on the *next* start.
 4. `resolve-config.sh` also runs at **post-install** (for the first restart) and at the start of
@@ -113,9 +114,9 @@ bats ./tests/test.bats --filter-tags '!release'
 bats ./tests/test.bats --show-output-of-passing-tests --verbose-run --print-output-on-failure
 ```
 
-You can exercise `resolve-config.sh` in isolation (no DDEV needed) by placing `playwright.yaml` /
-`defaults.yaml` next to it under a fake `.ddev/playwright/` and running it directly — it only needs
-POSIX `sh`/`grep`/`sed`.
+You can exercise `resolve-config.sh` in isolation (no DDEV needed) by reproducing the layout under a
+fake `.ddev/` — `playwright.yaml` at the `.ddev/` root and `defaults.yaml` in `.ddev/playwright/` —
+then running the script directly. It only needs POSIX `sh`/`grep`/`sed`.
 
 ## Design notes & pitfalls
 

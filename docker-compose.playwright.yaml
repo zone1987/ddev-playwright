@@ -29,8 +29,6 @@ services:
       - APP_URL=${APP_URL:-}
       - SHOPWARE_ACCESS_KEY_ID=${SHOPWARE_ACCESS_KEY_ID:-}
       - SHOPWARE_SECRET_ACCESS_KEY=${SHOPWARE_SECRET_ACCESS_KEY:-}
-      - SHOPWARE_ADMIN_USERNAME=${SHOPWARE_ADMIN_USERNAME:-}
-      - SHOPWARE_ADMIN_PASSWORD=${SHOPWARE_ADMIN_PASSWORD:-}
       # WordPress (@wordpress/e2e-test-utils-playwright):
       # https://developer.wordpress.org/news/2026/05/getting-started-writing-wordpress-e2e-tests-with-playwright/
       - WP_BASE_URL=${WP_BASE_URL:-}

@@ -91,7 +91,7 @@ teardown() {
   run ddev add-on get "${DIR}"
   assert_success
   # Point searchPaths at directories that do not exist.
-  cat > "${TESTDIR}/.ddev/playwright/playwright.yaml" <<'EOF'
+  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
 #ddev-generated
 version: 1
 playwright:
@@ -111,7 +111,7 @@ EOF
   run ddev add-on get "${DIR}"
   assert_success
   # searchPaths are empty by default, so opt in to custom/plugins explicitly.
-  cat > "${TESTDIR}/.ddev/playwright/playwright.yaml" <<'EOF'
+  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
 #ddev-generated
 version: 1
 playwright:
@@ -142,7 +142,7 @@ EOF
   set -eu -o pipefail
   run ddev add-on get "${DIR}"
   assert_success
-  cat > "${TESTDIR}/.ddev/playwright/playwright.yaml" <<'EOF'
+  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
 #ddev-generated
 version: 1
 playwright:

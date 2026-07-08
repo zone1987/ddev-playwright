@@ -31,7 +31,7 @@ type Manifest = {
 };
 
 const DEFAULTS: Manifest = {
-  // Empty by default — searchPaths are opted into via .ddev/playwright/playwright.yaml.
+  // Empty by default — searchPaths are opted into via .ddev/playwright.yaml.
   searchPaths: [],
   instanceConfig: 'tests/playwright.config.ts',
   testDirectory: 'tests/e2e',

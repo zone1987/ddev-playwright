@@ -1,7 +1,7 @@
 #ddev-generated
 # Baseline defaults used by resolve-config.sh. The user-facing playwright.yaml is
 # deep-merged ON TOP of this file (per key), so a user only needs to override the
-# keys they care about. Do not edit — override in .ddev/playwright/playwright.yaml.
+# keys they care about. Do not edit — override in .ddev/playwright.yaml.
 version: 1
 
 playwright:

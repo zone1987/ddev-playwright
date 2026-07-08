@@ -250,10 +250,10 @@ case "${SUBCMD}" in
       else
         echo "${warn} acceptance-test-suite not installed → run 'ddev playwright install'"
       fi
-      if px sh -c '[ -n "${SHOPWARE_ACCESS_KEY_ID:-}" ] || { [ -n "${SHOPWARE_ADMIN_USERNAME:-}" ] && [ -n "${SHOPWARE_ADMIN_PASSWORD:-}" ]; }' >/dev/null 2>&1; then
-        echo "${ok} Shopware credentials present"
+      if px sh -c '[ -n "${SHOPWARE_ACCESS_KEY_ID:-}" ] && [ -n "${SHOPWARE_SECRET_ACCESS_KEY:-}" ]' >/dev/null 2>&1; then
+        echo "${ok} Shopware integration credentials present"
       else
-        echo "${warn} no Shopware credentials in .env (SHOPWARE_ACCESS_KEY_ID or SHOPWARE_ADMIN_USERNAME/PASSWORD)"
+        echo "${warn} no Shopware integration credentials in .env (SHOPWARE_ACCESS_KEY_ID + SHOPWARE_SECRET_ACCESS_KEY)"
       fi
     fi
 
