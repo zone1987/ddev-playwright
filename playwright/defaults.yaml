@@ -1,0 +1,18 @@
+#ddev-generated
+# Baseline defaults used by resolve-config.sh. The user-facing playwright.yaml is
+# deep-merged ON TOP of this file (per key), so a user only needs to override the
+# keys they care about. Do not edit — override in .ddev/playwright/playwright.yaml.
+version: 1
+
+playwright:
+  # Empty => resolve-config.sh uses the "latest" image and @playwright/test@latest.
+  version: ""
+  # Empty by default: the user opts in to searchPaths in their own playwright.yaml.
+  # Nothing is scanned until they do, keeping the add-on CMS-neutral out of the box.
+  searchPaths: []
+  instanceConfig: tests/playwright.config.ts
+  testDirectory: tests/e2e
+  mergeStrategy: deep
+  # Extra npm packages installed alongside @playwright/test. Empty by default;
+  # @axe-core/playwright is always installed regardless.
+  packages: []

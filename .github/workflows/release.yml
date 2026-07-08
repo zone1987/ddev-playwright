@@ -1,0 +1,46 @@
+name: release
+
+# Release gating: when a version tag is pushed, run the FULL add-on test suite
+# (both DDEV stable and HEAD) and only publish the GitHub release if every job is
+# green. If any test fails, no release is created.
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # 1) Run the complete bats suite (including the @release-tagged test) against a
+  #    matrix of DDEV versions. This is the gate.
+  test:
+    strategy:
+      matrix:
+        ddev_version: [stable, HEAD]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ddev/github-action-add-on-test@v2
+        with:
+          ddev_version: ${{ matrix.ddev_version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          addon_repository: ${{ github.repository }}
+          addon_ref: ${{ github.ref_name }}
+
+  # 2) Only runs if ALL matrix test jobs succeeded. Creates the GitHub release.
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: false
