@@ -2,14 +2,55 @@
 services:
   playwright:
     container_name: ddev-${DDEV_SITENAME}-playwright
-    image: ${PLAYWRIGHT_DOCKER_IMAGE:-ddev/ddev-utilities:latest}
-    command: tail -f /dev/null
+    hostname: ${DDEV_SITENAME}-playwright
+    # Image tag is resolved from .ddev/playwright.yaml into .ddev/.env.playwright
+    # by the pre-start hook. The :latest fallback keeps this file valid even if
+    # that file is missing, so `ddev start` never breaks.
+    image: ${PLAYWRIGHT_DOCKER_IMAGE:-mcr.microsoft.com/playwright:latest}
+    command: ["tail", "-f", "/dev/null"]
     restart: "no"
+    working_dir: /var/www/html
+    # Browsers ship preinstalled in the official image; point Playwright at them
+    # so nothing is ever downloaded into the project.
+    environment:
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - VIRTUAL_HOST=$DDEV_HOSTNAME
+      - DDEV_SITENAME=${DDEV_SITENAME}
+      # Native Playwright UI (8077) + HTML report server (9323) via the DDEV router.
+      # UI reachable at https://<site>.ddev.site:8078, report at :9324.
+      - HTTP_EXPOSE=8077:8077,9323:9323
+      - HTTPS_EXPOSE=8078:8077,9324:9323
+      # CMS test-suite variables. Populated in .ddev/.env.playwright only when the
+      # respective CMS is detected (from the project .env, with base URLs falling
+      # back to DDEV_PRIMARY_URL); empty/absent otherwise. Harmless for any other
+      # project — the add-on core stays CMS-neutral.
+      # Shopware (@shopware-ag/acceptance-test-suite):
+      # https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html
+      - APP_URL=${APP_URL:-}
+      - SHOPWARE_ACCESS_KEY_ID=${SHOPWARE_ACCESS_KEY_ID:-}
+      - SHOPWARE_SECRET_ACCESS_KEY=${SHOPWARE_SECRET_ACCESS_KEY:-}
+      - SHOPWARE_ADMIN_USERNAME=${SHOPWARE_ADMIN_USERNAME:-}
+      - SHOPWARE_ADMIN_PASSWORD=${SHOPWARE_ADMIN_PASSWORD:-}
+      # WordPress (@wordpress/e2e-test-utils-playwright):
+      # https://developer.wordpress.org/news/2026/05/getting-started-writing-wordpress-e2e-tests-with-playwright/
+      - WP_BASE_URL=${WP_BASE_URL:-}
+      - WP_USERNAME=${WP_USERNAME:-}
+      - WP_PASSWORD=${WP_PASSWORD:-}
     # These labels ensure this service is discoverable by DDEV.
     labels:
       com.ddev.site-name: ${DDEV_SITENAME}
       com.ddev.approot: ${DDEV_APPROOT}
-
+    external_links:
+      - "ddev-router:${DDEV_SITENAME}.${DDEV_TLD}"
     volumes:
+      # Project root: the app is reachable at http://web from this container.
+      - "../:/var/www/html"
+      # .ddev, providing playwright.paths.json + the active playwright.config.ts.
       - ".:/mnt/ddev_config"
       - "ddev-global-cache:/mnt/ddev-global-cache"
+      # node_modules lives ONLY in this named volume: invisible on the host, not
+      # in the git repo, and never synced by Mutagen.
+      - "playwright-node-modules:/mnt/ddev_config/playwright/node_modules"
+
+volumes:
+  playwright-node-modules:

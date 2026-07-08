@@ -1,0 +1,414 @@
+#!/usr/bin/env bash
+#ddev-generated
+
+## Description: Run Playwright inside the isolated playwright service
+## Usage: playwright [test|install|discover|doctor|show-report|cli] [--ui] [--dir <path>] [-- <args>]
+## Example: |-
+##   ddev playwright                       # run all discovered tests
+##   ddev playwright --ui                  # open the native UI mode in the browser
+##   ddev playwright install               # install @playwright/test + instance deps, scaffold configs
+##   ddev playwright discover              # list discovered Playwright instances
+##   ddev playwright doctor                # diagnose the setup (service, version, config, discovery)
+##   ddev playwright show-report           # serve the last HTML report
+##   ddev playwright cli codegen https://x # run any raw Playwright CLI command
+##   ddev playwright cli --version         # e.g. version, open, merge-reports, clear-cache
+##   ddev playwright --dir custom/plugins/Foo  # target a single instance
+##   ddev playwright test -- --headed --grep smoke  # pass args through to Playwright
+## HostWorkingDir: true
+## CanRunGlobally: false
+
+# macOS bash 3.2 safe: no mapfile / associative arrays. POSIX-ish where possible.
+set -u
+
+APPROOT="${DDEV_APPROOT:-$(pwd)}"
+DDEV_DIR="${APPROOT}/.ddev"
+PW_DIR="${DDEV_DIR}/playwright"
+RESOLVE="${PW_DIR}/bin/resolve-config.sh"
+MANIFEST="${PW_DIR}/paths.json"
+CONFIG_IN_CONTAINER="/mnt/ddev_config/playwright/config.ts"
+
+# ---------------------------------------------------------------------------
+# 1. Always refresh the manifest on the host FIRST, so searchPaths / testDir /
+#    discovery reflect the current .ddev/playwright.yaml on every invocation —
+#    no `ddev restart` required for config changes (maximum flexibility).
+# ---------------------------------------------------------------------------
+if [ -f "${RESOLVE}" ]; then
+  bash "${RESOLVE}" >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Non-blocking version-drift warning: the running container's image is fixed
+#    at build time; only `ddev restart` can change it. Warn, then continue.
+# ---------------------------------------------------------------------------
+desired_version=""
+if [ -f "${MANIFEST}" ]; then
+  desired_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MANIFEST}" | head -n1)"
+fi
+# Central install location inside the container (node_modules volume).
+CENTRAL="/mnt/ddev_config/playwright"
+
+# Query the installed @playwright/test version from the central install dir. The
+# playwright binary lives in our node_modules volume, so run npx from there.
+pw_version() {
+  ddev exec -s playwright sh -c "cd ${CENTRAL} 2>/dev/null && NODE_PATH=${CENTRAL}/node_modules ${CENTRAL}/node_modules/.bin/playwright --version 2>/dev/null | sed 's/^Version //'" 2>/dev/null | tr -d '\r'
+}
+
+if [ -n "${desired_version}" ] && [ "${desired_version}" != "latest" ]; then
+  running_version="$(pw_version)"
+  if [ -n "${running_version}" ] && [ "${running_version}" != "${desired_version}" ]; then
+    printf '\033[33m⚠ playwright.yaml wants version %s, running container has %s.\033[0m\n' "${desired_version}" "${running_version}" >&2
+    printf '  Run "ddev restart" to activate mcr.microsoft.com/playwright:v%s-noble.\n' "${desired_version}" >&2
+    printf '  (continuing with the currently running container)\n' >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Ensure the project (and playwright service) is running.
+# ---------------------------------------------------------------------------
+if [ "${DDEV_PROJECT_STATUS:-}" != "running" ]; then
+  ddev start >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+px() {
+  # Execute inside the playwright service at the project root.
+  ddev exec -s playwright "$@"
+}
+
+# Run `playwright <args>` inside the container with the module resolution pointed
+# at the central install. @playwright/test lives in the node_modules volume at
+# /mnt/ddev_config/playwright (CENTRAL, defined above), not in the project root, so
+# both the runner and the spec files resolve it via NODE_PATH + the central bin.
+pw_run() {
+  # Usage: pw_run <playwright-args...>
+  ddev exec -s playwright sh -c "cd /var/www/html && NODE_PATH=${CENTRAL}/node_modules PATH=${CENTRAL}/node_modules/.bin:\$PATH playwright $*"
+}
+
+# Print discovered instance paths (one per line) by running the discovery helper
+# in-container against the active config's manifest. Never errors. Using a real
+# file (not inline node -e) avoids shell/quote-escaping fragility.
+discover_instances() {
+  px node /mnt/ddev_config/playwright/bin/discover.mjs 2>/dev/null
+}
+
+# Classify discovered instances into bundled vs standalone. Emits TAB-separated
+# lines: "bundled\t<rel>" or "standalone\t<rel>\t<absConfigPath>".
+classify_instances() {
+  px node /mnt/ddev_config/playwright/bin/discover.mjs --mode classify 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+SUBCMD="test"
+UI=0
+DIR=""
+PASSTHROUGH=""
+CLI_ARGS=""
+
+# `cli` captures ALL following args verbatim (raw Playwright CLI passthrough), so
+# handle it before the normal flag parsing (which would eat --ui/--dir/etc.).
+if [ "${1:-}" = "cli" ]; then
+  SUBCMD="cli"; shift
+  CLI_ARGS="$*"
+else
+  # Detect a leading subcommand.
+  case "${1:-}" in
+    test|install|discover|doctor|show-report)
+      SUBCMD="$1"; shift ;;
+  esac
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ui) UI=1; shift ;;
+      --dir) DIR="${2:-}"; shift 2 ;;
+      --dir=*) DIR="${1#--dir=}"; shift ;;
+      --) shift; PASSTHROUGH="$*"; break ;;
+      *) PASSTHROUGH="${PASSTHROUGH} $1"; shift ;;
+    esac
+  done
+fi
+
+project_flag() {
+  # Map --dir to a Playwright --project filter (project names == relative path).
+  if [ -n "${DIR}" ]; then
+    printf ' --project=%s' "${DIR}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+case "${SUBCMD}" in
+
+  discover)
+    found="$(discover_instances)"
+    if [ -z "${found}" ]; then
+      echo "No Playwright instances found in the configured searchPaths."
+      exit 0
+    fi
+    echo "Discovered Playwright instances:"
+    echo "${found}" | sed 's/^/  - /'
+    exit 0
+    ;;
+
+  doctor)
+    # Diagnostic report. Prints ✓ / ⚠ / ✗ per check with actionable hints.
+    # Purely informational: never changes anything, exits 0.
+    ok="✓"; warn="⚠"; bad="✗"
+    echo "Playwright add-on diagnostics"
+    echo "-----------------------------"
+
+    # 1. Service up + Playwright CLI available.
+    if px true >/dev/null 2>&1; then
+      running_version="$(pw_version)"
+      if [ -n "${running_version}" ]; then
+        echo "${ok} playwright service running (@playwright/test ${running_version})"
+      else
+        echo "${warn} service running but @playwright/test not found → run 'ddev playwright install'"
+      fi
+    else
+      echo "${bad} playwright service not reachable → run 'ddev restart'"
+    fi
+
+    # 2. Config resolution artifacts.
+    if [ -f "${DDEV_DIR}/.env.playwright" ]; then
+      echo "${ok} .env.playwright present (wanted version: ${desired_version:-latest})"
+    else
+      echo "${bad} .env.playwright missing → run 'ddev restart'"
+    fi
+    if [ -f "${MANIFEST}" ]; then
+      echo "${ok} playwright/paths.json manifest present"
+    else
+      echo "${bad} playwright/paths.json missing → run 'ddev restart'"
+    fi
+    if [ -f "${PW_DIR}/config.ts" ]; then
+      echo "${ok} global playwright/config.ts activated"
+    else
+      echo "${warn} .ddev/playwright/config.ts missing → re-run 'ddev add-on get'"
+    fi
+
+    # 3. Version drift (wanted vs running).
+    if [ -n "${desired_version}" ] && [ "${desired_version}" != "latest" ] && [ -n "${running_version}" ]; then
+      if [ "${desired_version}" = "${running_version}" ]; then
+        echo "${ok} version matches (${running_version})"
+      else
+        echo "${warn} version drift: wanted ${desired_version}, container has ${running_version}"
+        echo "    → run 'ddev restart' to activate mcr.microsoft.com/playwright:v${desired_version}-noble"
+      fi
+    fi
+
+    # 4. searchPaths existence (informational; missing paths are never errors).
+    if [ -f "${MANIFEST}" ]; then
+      sp_list="$(sed -n 's/.*"searchPaths"[[:space:]]*:[[:space:]]*\[\(.*\)\].*/\1/p' "${MANIFEST}" | head -n1 | tr ',' '\n' | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//')"
+      if [ -n "${sp_list}" ]; then
+        echo "searchPaths:"
+        echo "${sp_list}" | while IFS= read -r sp; do
+          [ -z "${sp}" ] && continue
+          if [ -d "${APPROOT}/${sp}" ]; then
+            echo "  ${ok} ${sp}"
+          else
+            echo "  ${warn} ${sp} (does not exist — skipped)"
+          fi
+        done
+      fi
+    fi
+
+    # 5. Discovery.
+    di="$(discover_instances)"
+    n="$(printf '%s\n' "${di}" | grep -c . || true)"
+    if [ "${n}" -gt 0 ] 2>/dev/null; then
+      echo "${ok} ${n} instance(s) discovered:"
+      printf '%s\n' "${di}" | sed 's/^/    - /'
+    else
+      echo "${warn} no instances discovered (add tests/e2e with *.spec.ts under a searchPath)"
+    fi
+
+    # 6. @playwright/test installed in the central volume.
+    if px sh -c 'test -d /mnt/ddev_config/playwright/node_modules/@playwright/test' >/dev/null 2>&1; then
+      echo "${ok} @playwright/test installed"
+    else
+      echo "${warn} @playwright/test not installed → run 'ddev playwright install'"
+    fi
+
+    # 7. App reachable at http://web (baseURL sanity check).
+    if px sh -c 'command -v curl >/dev/null 2>&1 && curl -s -o /dev/null -m 5 http://web/ 2>/dev/null'; then
+      echo "${ok} app reachable at http://web (default baseURL)"
+    else
+      echo "${warn} http://web not reachable from container (baseURL may need overriding)"
+    fi
+
+    # 8. Shopware integration status.
+    is_sw="$(sed -n 's/.*"isShopware"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    if [ "${is_sw}" = "true" ]; then
+      app_url="$(px sh -c 'printf "%s" "${APP_URL:-}"' 2>/dev/null | tr -d '\r')"
+      echo "${ok} Shopware detected (APP_URL=${app_url:-<unset>})"
+      if px sh -c 'test -d /mnt/ddev_config/playwright/node_modules/@shopware-ag/acceptance-test-suite' >/dev/null 2>&1; then
+        echo "${ok} @shopware-ag/acceptance-test-suite installed"
+      else
+        echo "${warn} acceptance-test-suite not installed → run 'ddev playwright install'"
+      fi
+      if px sh -c '[ -n "${SHOPWARE_ACCESS_KEY_ID:-}" ] || { [ -n "${SHOPWARE_ADMIN_USERNAME:-}" ] && [ -n "${SHOPWARE_ADMIN_PASSWORD:-}" ]; }' >/dev/null 2>&1; then
+        echo "${ok} Shopware credentials present"
+      else
+        echo "${warn} no Shopware credentials in .env (SHOPWARE_ACCESS_KEY_ID or SHOPWARE_ADMIN_USERNAME/PASSWORD)"
+      fi
+    fi
+
+    # 9. WordPress integration status.
+    is_wp="$(sed -n 's/.*"isWordpress"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    if [ "${is_wp}" = "true" ]; then
+      wp_url="$(px sh -c 'printf "%s" "${WP_BASE_URL:-}"' 2>/dev/null | tr -d '\r')"
+      echo "${ok} WordPress detected (WP_BASE_URL=${wp_url:-<unset>})"
+      if px sh -c 'test -d /mnt/ddev_config/playwright/node_modules/@wordpress/e2e-test-utils-playwright' >/dev/null 2>&1; then
+        echo "${ok} @wordpress/e2e-test-utils-playwright installed"
+      else
+        echo "${warn} e2e-test-utils-playwright not installed → run 'ddev playwright install'"
+      fi
+    fi
+
+    exit 0
+    ;;
+
+  install)
+    # Central install of @playwright/test at the resolved version.
+    ver="${desired_version:-latest}"
+    # Detect CMS from the manifest to also install the matching test packages.
+    is_sw="$(sed -n 's/.*"isShopware"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    is_wp="$(sed -n 's/.*"isWordpress"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    # Build the dependency list: @playwright/test + always @axe-core/playwright
+    # (accessibility testing out of the box) + CMS suites + user packages.
+    deps="@playwright/test@${ver} @axe-core/playwright"
+    [ "${is_sw}" = "true" ] && deps="${deps} @shopware-ag/acceptance-test-suite"
+    [ "${is_wp}" = "true" ] && deps="${deps} @wordpress/e2e-test-utils-playwright"
+    # User-declared extra packages from playwright.yaml (manifest "packages": [...]).
+    extra="$(sed -n 's/.*"packages"[[:space:]]*:[[:space:]]*\[\(.*\)\].*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1 \
+      | tr ',' '\n' | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//' | tr '\n' ' ')"
+    [ -n "${extra}" ] && deps="${deps} ${extra}"
+
+    echo "Installing (central): ${deps}"
+    px sh -c "mkdir -p /mnt/ddev_config/playwright && cd /mnt/ddev_config/playwright && \
+      if [ ! -f package.json ]; then \
+        printf '{\n  \"//\": \"#ddev-generated\",\n  \"name\": \"ddev-playwright\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n' > package.json; \
+      fi && \
+      npm install --no-audit --no-fund --silent --save-dev ${deps}" || {
+        echo "Central npm install failed." >&2; exit 1; }
+
+    # Per-instance: install deps + scaffold a config where one is missing.
+    found="$(discover_instances)"
+    if [ -n "${found}" ]; then
+      echo "${found}" | while IFS= read -r inst; do
+        [ -z "${inst}" ] && continue
+        # Install instance deps if it has its own package.json.
+        px sh -c "cd '/var/www/html/${inst}' 2>/dev/null && [ -f package.json ] && \
+          { echo 'Installing deps for ${inst} ...'; npm install --no-audit --no-fund --silent; } || true"
+        # Scaffold a minimal instance config if none exists (never overwrite).
+        px sh -c '
+          inst="'"${inst}"'"
+          dir="/var/www/html/${inst}"
+          # Resolve instanceConfig / testDirectory from the manifest.
+          icfg=$(sed -n "s/.*\"instanceConfig\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" /mnt/ddev_config/playwright/paths.json | head -n1)
+          [ -z "$icfg" ] && icfg="tests/playwright.config.ts"
+          target="${dir}/${icfg}"
+          alt_ts="${dir}/playwright.config.ts"
+          alt_js="${dir}/playwright.config.js"
+          if [ ! -f "$target" ] && [ ! -f "$alt_ts" ] && [ ! -f "$alt_js" ]; then
+            mkdir -p "$(dirname "$target")"
+            {
+              echo "// #ddev-generated"
+              echo "import { defineConfig } from '"'"'@playwright/test'"'"';"
+              echo "import base from '"'"'/mnt/ddev_config/playwright/config.ts'"'"';"
+              echo "export default defineConfig({ ...base, testDir: '"'"'./e2e'"'"' });"
+            } > "$target"
+            echo "Scaffolded ${inst}/${icfg}"
+          fi
+        ' || true
+      done
+    fi
+    echo "Done."
+    exit 0
+    ;;
+
+  show-report)
+    echo "Serving HTML report at https://${DDEV_HOSTNAME:-$DDEV_SITENAME.ddev.site}:9324"
+    pw_run show-report --host 0.0.0.0 --port 9323
+    exit $?
+    ;;
+
+  cli)
+    # Raw passthrough to the Playwright CLI in the container (codegen, open,
+    # --version, merge-reports, clear-cache, install-deps, …). Module resolution
+    # points at the central install via pw_run.
+    if [ -z "${CLI_ARGS}" ]; then
+      echo "Usage: ddev playwright cli <playwright-cli-args>   (e.g. codegen <url>, --version, open)" >&2
+      exit 1
+    fi
+    # shellcheck disable=SC2086
+    pw_run ${CLI_ARGS}
+    exit $?
+    ;;
+
+  test)
+    classified="$(classify_instances)"
+    if [ -z "${classified}" ]; then
+      echo "No Playwright instances found in the configured searchPaths. Nothing to run."
+      exit 0
+    fi
+
+    # Split into bundled (run together via the global config) and standalone
+    # (each run with its own --config, so its browsers/projects apply verbatim).
+    bundled_any=0
+    standalone_lines="$(printf '%s\n' "${classified}" | grep '^standalone' || true)"
+    printf '%s\n' "${classified}" | grep -q '^bundled' && bundled_any=1
+
+    # --dir filters to a single instance across both groups.
+    if [ -n "${DIR}" ]; then
+      standalone_lines="$(printf '%s\n' "${standalone_lines}" | awk -F'\t' -v d="${DIR}" '$2==d')"
+      printf '%s\n' "${classified}" | awk -F'\t' -v d="${DIR}" '$1=="bundled" && $2==d' | grep -q . && bundled_any=1 || bundled_any=0
+    fi
+
+    # UI mode: open one UI. If a single standalone instance is targeted, use its
+    # config; otherwise use the global (bundled) config.
+    if [ "${UI}" -eq 1 ]; then
+      url="https://${DDEV_HOSTNAME:-$DDEV_SITENAME.ddev.site}:8078"
+      echo "Opening Playwright UI mode at ${url}"
+      ui_cfg="${CONFIG_IN_CONTAINER}"
+      single_standalone="$(printf '%s\n' "${standalone_lines}" | grep -c . || true)"
+      if [ "${bundled_any}" -eq 0 ] && [ "${single_standalone}" = "1" ]; then
+        ui_cfg="$(printf '%s\n' "${standalone_lines}" | head -n1 | cut -f3)"
+      fi
+      # shellcheck disable=SC2046
+      pw_run test --config="${ui_cfg}" --ui --ui-host=0.0.0.0 --ui-port=8077 $(project_flag) ${PASSTHROUGH}
+      exit $?
+    fi
+
+    rc=0
+    # 1) Bundled instances via the global config (Chromium default).
+    if [ "${bundled_any}" -eq 1 ]; then
+      echo "▶ Running bundled instances (global config) ..."
+      # shellcheck disable=SC2046,SC2086
+      pw_run test --config="${CONFIG_IN_CONTAINER}" --pass-with-no-tests $(project_flag) ${PASSTHROUGH} || rc=$?
+    fi
+    # 2) Standalone instances, each with its own config. Use a temp marker to carry
+    #    failures out of the while-subshell so CI sees a non-zero exit.
+    if [ -n "${standalone_lines}" ]; then
+      failmark="$(mktemp 2>/dev/null || echo /tmp/pw-fail.$$)"
+      printf '%s\n' "${standalone_lines}" | while IFS="$(printf '\t')" read -r _kind rel cfg; do
+        [ -z "${rel}" ] && continue
+        echo "▶ Running ${rel} (own config) ..."
+        # shellcheck disable=SC2086
+        pw_run test --config="${cfg}" ${PASSTHROUGH} || echo "fail" >> "${failmark}"
+      done
+      if [ -s "${failmark}" ]; then rc=1; fi
+      rm -f "${failmark}"
+    fi
+    exit ${rc}
+    ;;
+
+  *)
+    echo "Unknown subcommand: ${SUBCMD}" >&2
+    exit 1
+    ;;
+esac
