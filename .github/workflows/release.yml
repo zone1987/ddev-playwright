@@ -37,10 +37,12 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5+ run on Node.js 24 (v4 targets the deprecated Node.js 20 runtime).
+      - uses: actions/checkout@v5
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        # v3 runs on Node.js 24 (v2 targets the deprecated Node.js 20 runtime).
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           fail_on_unmatched_files: false
