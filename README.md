@@ -198,13 +198,18 @@ subfolder). When detected, the add-on installs
 on `ddev playwright install` and forwards the suite's variables into the container.
 
 Authentication uses a Shopware **integration** (API access key + secret). Set these in your project
-`.env` — variable names per the
+`.env` (or `.env.local`) — variable names per the
 [Shopware E2E guide](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html):
 
 ```bash
 SHOPWARE_ACCESS_KEY_ID="<your-shopware-integration-id>"
 SHOPWARE_SECRET_ACCESS_KEY="<your-shopware-integration-secret>"
 ```
+
+> **Where to put secrets:** the add-on reads both `.env` and `.env.local`, with `.env.local` taking
+> precedence (Symfony convention). Since `.env.local` is git-ignored by default, keep the access key
+> secret there so it never gets committed. Do **not** edit the generated `.ddev/.env.playwright` — it
+> is overwritten from `.env`/`.env.local` on every `ddev` run.
 
 #### Creating the integration in Shopware
 
@@ -217,10 +222,11 @@ To obtain those two values, create an API integration in the Shopware admin:
 4. Save. Shopware shows the **Access key ID** and a **Secret access key** — the secret is displayed
    **only once**, so copy it immediately.
 5. Put the Access key ID into `SHOPWARE_ACCESS_KEY_ID` and the secret into
-   `SHOPWARE_SECRET_ACCESS_KEY` in your project `.env`, then run `ddev restart`.
+   `SHOPWARE_SECRET_ACCESS_KEY` in your project `.env.local` (recommended, git-ignored) or `.env`,
+   then run `ddev restart`.
 
 `APP_URL` (the suite's base URL) defaults to your project's primary DDEV URL (`DDEV_PRIMARY_URL`); a
-value you set in `.env` always wins. Override detection in `playwright.yaml`:
+value you set in `.env`/`.env.local` always wins. Override detection in `playwright.yaml`:
 
 ```yaml
 playwright:
@@ -236,7 +242,8 @@ docroot or a common subfolder, or a DDEV `type: wordpress`. When detected, the a
 on `ddev playwright install` and forwards its variables. Tests run against the **running DDEV site**
 — it does not start a separate `wp-env` container.
 
-These are optional in your project `.env` — variable names per the
+These are optional in your project `.env` (or `.env.local`, which takes precedence) — variable names
+per the
 [WordPress E2E guide](https://developer.wordpress.org/news/2026/05/getting-started-writing-wordpress-e2e-tests-with-playwright/):
 
 ```bash
