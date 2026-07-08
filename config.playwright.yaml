@@ -21,6 +21,29 @@ hooks:
           }
         fi
   post-start:
+    # Keep the add-on's generated env files out of git. Both are regenerated on every
+    # start and must never be committed. DDEV rewrites .ddev/.gitignore on every start
+    # (and doesn't know about add-on files), so we (re-)add the entries on the HOST in
+    # post-start — AFTER DDEV has regenerated .gitignore. Idempotent.
+    #   * .ddev/.env.playwright  -> .ddev/.gitignore
+    #   * <app>/.ddev-playwright-fallback.env -> a .gitignore in the app's env dir
+    #     (PLAYWRIGHT_CMS_ENV_DIR from the generated .env.playwright; may be the project
+    #     root or a subfolder like shopware/).
+    - exec-host: |
+        set -u
+        ensure_ignore() { # <gitignore-file> <line>
+          gi="$1"; line="$2"
+          [ -n "${gi}" ] || return 0
+          if [ ! -f "${gi}" ] || ! grep -qxF "${line}" "${gi}" 2>/dev/null; then
+            printf '%s\n' "${line}" >> "${gi}"
+          fi
+        }
+        ensure_ignore "${DDEV_APPROOT}/.ddev/.gitignore" '/.env.playwright'
+        ENVFILE="${DDEV_APPROOT}/.ddev/.env.playwright"
+        if [ -f "${ENVFILE}" ]; then
+          cms_dir="$(sed -n 's/^PLAYWRIGHT_CMS_ENV_DIR=//p' "${ENVFILE}" 2>/dev/null | head -n1)"
+          [ -n "${cms_dir}" ] && ensure_ignore "${cms_dir}/.gitignore" '/.ddev-playwright-fallback.env'
+        fi
     # Non-fatal version-drift warning in the playwright container. `exec` and
     # `service` are sibling keys (DDEV hook syntax). Guarded so it never fails
     # the start.

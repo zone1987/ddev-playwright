@@ -197,8 +197,8 @@ subfolder). When detected, the add-on installs
 [`@shopware-ag/acceptance-test-suite`](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html)
 on `ddev playwright install` and forwards the suite's variables into the container.
 
-Authentication uses a Shopware **integration** (API access key + secret). Set these in your project
-`.env` (or `.env.local`) — variable names per the
+Authentication uses a Shopware **integration** (API access key + secret). Set these in your project's
+own env files — variable names per the
 [Shopware E2E guide](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html):
 
 ```bash
@@ -206,10 +206,12 @@ SHOPWARE_ACCESS_KEY_ID="<your-shopware-integration-id>"
 SHOPWARE_SECRET_ACCESS_KEY="<your-shopware-integration-secret>"
 ```
 
-> **Where to put secrets:** the add-on reads both `.env` and `.env.local`, with `.env.local` taking
-> precedence (Symfony convention). Since `.env.local` is git-ignored by default, keep the access key
-> secret there so it never gets committed. Do **not** edit the generated `.ddev/.env.playwright` — it
-> is overwritten from `.env`/`.env.local` on every `ddev` run.
+> **One source of truth.** The playwright container reads these directly from your app's
+> `.env`, `.env.local` and `.env.test` (loaded in that order — later wins, matching Symfony
+> precedence). Keep them in **one** place; there is nothing to duplicate. Put the secret in
+> `.env.local` (git-ignored by default) so it never gets committed. The add-on works whether your
+> app lives in the project root or a subfolder (e.g. `shopware/`) — it locates the env dir
+> automatically. You never edit `.ddev/.env.playwright`; it is generated and carries no credentials.
 
 #### Creating the integration in Shopware
 

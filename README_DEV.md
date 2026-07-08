@@ -22,11 +22,11 @@ subfolders. `playwright.yaml` sits there too so it's prominent and easy to edit.
 | Path | Purpose |
 | --- | --- |
 | `install.yaml` | Add-on manifest: which files DDEV installs, plus post-install / removal actions. |
-| `docker-compose.playwright.yaml` | The isolated `playwright` service (official image, UI/report ports, `node_modules` volume, Shopware env passthrough). |
-| `config.playwright.yaml` | `pre-start` hook (resolve version → `.env.playwright`) + `post-start` version-drift warning. |
+| `docker-compose.playwright.yaml` | The isolated `playwright` service (official image, UI/report ports, `node_modules` volume). Reads CMS credentials straight from the app's env files via `env_file` (fallback < `.env` < `.env.local` < `.env.test`). |
+| `config.playwright.yaml` | `pre-start` hook (resolve version → `.env.playwright`) + `post-start` hooks (git-ignore generated env files, version-drift warning). |
 | `playwright.yaml` | The user-facing config → `.ddev/playwright.yaml`, shipped with a `#ddev-generated` marker. |
 | `playwright/defaults.yaml` | Baseline defaults that `playwright.yaml` is deep-merged onto. |
-| `playwright/bin/resolve-config.sh` | Host-side resolver: YAML → `.env.playwright` + `playwright/paths.json`. POSIX-only, Shopware detection. |
+| `playwright/bin/resolve-config.sh` | Host-side resolver: YAML → `.env.playwright` (image/flags/CMS env-dir/base-URL fallback — no credentials) + `playwright/paths.json` + the base-URL fallback env file. POSIX-only, Shopware/WordPress detection. |
 | `playwright/bin/discover.mjs` | In-container instance discovery helper (a real file, not inline node, to avoid quote-escaping). |
 | `playwright/config/config.ts` | Global config template; copied to `.ddev/playwright/config.ts` on install. Discovery + deep-merge. |
 | `commands/host/playwright` | The `ddev playwright` wrapper (test / install / discover / doctor / show-report / `--ui` / `--dir`). |
@@ -60,12 +60,20 @@ Discovery runs in two places sharing `discover.mjs`. Instances are classified as
 `searchPaths` is **empty by default** — the add-on stays CMS-neutral until the user opts in. CMS
 support is an additive layer: detection in
 `resolve-config.sh` sets `isShopware` / `isWordpress` in the manifest, which gates the matching
-package install and env passthrough — Shopware
+package install — Shopware
 ([source](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html))
-gets `@shopware-ag/acceptance-test-suite` + `SHOPWARE_*`/`APP_URL`; WordPress
+gets `@shopware-ag/acceptance-test-suite`; WordPress
 ([source](https://developer.wordpress.org/news/2026/05/getting-started-writing-wordpress-e2e-tests-with-playwright/))
-gets `@wordpress/e2e-test-utils-playwright` + `WP_*` (tested against the running DDEV site, not
-wp-env). A plain project is entirely unaffected.
+gets `@wordpress/e2e-test-utils-playwright` (tested against the running DDEV site, not wp-env). A
+plain project is entirely unaffected.
+
+**Credentials are single-source.** The container reads `SHOPWARE_*` / `WP_*` / `APP_URL` directly
+from the app's `.env` / `.env.local` / `.env.test` via docker-compose `env_file` (all
+`required: false`, loaded fallback < `.env` < `.env.local` < `.env.test`, later wins = Symfony
+precedence). `resolve-config.sh` never copies credentials into `.env.playwright`; it only resolves
+`PLAYWRIGHT_CMS_ENV_DIR` (the app's env directory — root or subfolder) and writes a base-URL-only
+fallback file. Both generated files are git-ignored by a `post-start` hook (re-applied after DDEV
+regenerates `.ddev/.gitignore`).
 
 > [!IMPORTANT]
 > `post_install_actions` and `removal_actions` run with the working directory set to the project's
