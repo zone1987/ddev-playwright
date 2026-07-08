@@ -126,58 +126,14 @@ A `playwright.config.js` that loads `.env.local`, derives the base URL from the 
 German admin language for the acceptance suite, and registers one Playwright project per plugin under
 `custom/static-plugins/*/tests/e2e`:
 
-```js
-import { defineConfig, devices } from '@playwright/test';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
-import fs from 'node:fs';
+A ready-to-use example config is provided at
+[`examples/shopware/playwright.config.js`](examples/shopware/playwright.config.js). It loads
+`.env.local`, derives the base URL from the DDEV container, sets German admin language for the
+acceptance suite, and registers **one Playwright project per plugin** under
+`custom/static-plugins/*/tests/e2e`. Copy it next to your `package.json` and adjust as needed.
 
-const rootDir = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(rootDir, '.env.local') });
-
-// VIRTUAL_HOST is provided to the container by DDEV. The Shopware suite builds
-// `${APP_URL}api/`, so keep a trailing slash.
-const baseURL = 'https://' + process.env.VIRTUAL_HOST.replace(/\/+$/, '') + '/';
-process.env.APP_URL = baseURL;
-// The acceptance suite resolves its login labels via translate(), keyed off LANG;
-// keep it in sync with use.locale below so both are German.
-process.env.LANG = 'de-DE';
-
-// One project per plugin that has a tests/e2e folder.
-const pluginsDir = resolve(rootDir, 'custom/static-plugins');
-const projects = fs
-  .readdirSync(pluginsDir, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => {
-    const testDir = join(pluginsDir, e.name, 'tests', 'e2e');
-    if (!fs.existsSync(testDir)) return null;
-    return {
-      name: e.name,
-      testDir,
-      // Keep each plugin's artefacts inside the plugin.
-      outputDir: join(pluginsDir, e.name, 'playwright-results'),
-    };
-  })
-  .filter(Boolean);
-
-export default defineConfig({
-  projects,
-  timeout: 180_000,
-  use: {
-    ...devices['Desktop Chrome'],
-    baseURL,
-    ignoreHTTPSErrors: true,           // DDEV uses a self-signed cert
-    locale: 'de-DE',                   // render the Shopware admin in German
-    timezoneId: 'Europe/Berlin',
-    trace: 'on',
-    screenshot: 'on',
-    video: 'retain-on-failure',
-  },
-});
-```
-
-Your `package.json` needs `"type": "module"` for the `import` syntax above (or use `require`).
+Your `package.json` needs `"type": "module"` for the example's `import` syntax (or convert it to
+`require`).
 
 ### Ignore the results folder
 
