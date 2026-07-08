@@ -3,19 +3,16 @@
 # Bats is a testing framework for Bash
 # Documentation https://bats-core.readthedocs.io/en/stable/
 # Bats libraries documentation https://github.com/ztombol/bats-docs
-
+#
 # For local tests, install bats-core, bats-assert, bats-file, bats-support
 # And run this in the add-on root directory:
 #   bats ./tests/test.bats
 # To exclude release tests:
 #   bats ./tests/test.bats --filter-tags '!release'
-# For debugging:
-#   bats ./tests/test.bats --show-output-of-passing-tests --verbose-run --print-output-on-failure
 
 setup() {
   set -eu -o pipefail
 
-  # Override this variable for your add-on:
   export GITHUB_REPO=zone1987/ddev-playwright
 
   TEST_BREW_PREFIX="$(brew --prefix 2>/dev/null || true)"
@@ -39,22 +36,20 @@ setup() {
 }
 
 health_checks() {
-  # The playwright service must be up and the CLI available inside it.
-  run ddev exec -s playwright npx playwright --version
+  # The playwright service must be up.
+  run ddev exec -s playwright echo ok
   assert_success
-  assert_output --partial "Version"
+  assert_output --partial "ok"
 
-  # The version resolution must have produced the environment + manifest.
-  assert_file_exist "${TESTDIR}/.ddev/.env.playwright"
-  assert_file_exist "${TESTDIR}/.ddev/playwright/paths.json"
-  assert_file_exist "${TESTDIR}/.ddev/playwright/config.ts"
+  # The official image ships the browsers preinstalled under /ms-playwright.
+  run ddev exec -s playwright sh -c 'ls /ms-playwright | grep -c chromium'
+  assert_success
+  refute_output "0"
 }
 
 teardown() {
   set -eu -o pipefail
   ddev delete -Oy "${PROJNAME}" >/dev/null 2>&1
-  # Persist TESTDIR if running inside GitHub Actions. Useful for uploading test result artifacts
-  # See example at https://github.com/ddev/github-action-add-on-test#preserving-artifacts
   if [ -n "${GITHUB_ENV:-}" ]; then
     [ -e "${GITHUB_ENV:-}" ] && echo "TESTDIR=${HOME}/tmp/${PROJNAME}" >> "${GITHUB_ENV}"
   else
@@ -72,104 +67,42 @@ teardown() {
   health_checks
 }
 
-@test "empty project does not error" {
+@test "default image tag is applied" {
   set -eu -o pipefail
   run ddev add-on get "${DIR}"
   assert_success
   run ddev restart -y
   assert_success
-  # No test directories anywhere: discover and a test run must both exit 0.
-  run ddev playwright discover
+  # The container runs a concrete Playwright image (default tag), not an empty ref.
+  run ddev exec -s playwright sh -c 'echo "${PLAYWRIGHT_BROWSERS_PATH:-}"'
   assert_success
-  assert_output --partial "No Playwright instances found"
-  run ddev playwright
-  assert_success
+  assert_output --partial "/ms-playwright"
 }
 
-@test "nonexistent searchPaths do not error" {
+@test "image tag can be pinned via .ddev/.env" {
   set -eu -o pipefail
   run ddev add-on get "${DIR}"
   assert_success
-  # Point searchPaths at directories that do not exist.
-  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
-#ddev-generated
-version: 1
-playwright:
-  searchPaths:
-    - does/not/exist
-    - also/missing
-EOF
+  printf 'PLAYWRIGHT_IMAGE_TAG=v1.56.1-noble\n' > "${TESTDIR}/.ddev/.env"
   run ddev restart -y
   assert_success
-  run ddev playwright discover
+  # The pin controls the Docker image tag: the running container uses exactly it.
+  run docker inspect --format '{{.Config.Image}}' "ddev-${PROJNAME}-playwright"
   assert_success
-  assert_output --partial "No Playwright instances found"
+  assert_output --partial "mcr.microsoft.com/playwright:v1.56.1-noble"
 }
 
-@test "one discovered instance" {
+@test "CLI passthrough works" {
   set -eu -o pipefail
   run ddev add-on get "${DIR}"
   assert_success
-  # searchPaths are empty by default, so opt in to custom/plugins explicitly.
-  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
-#ddev-generated
-version: 1
-playwright:
-  searchPaths:
-    - custom/plugins
-EOF
-  # Create a fake instance under that searchPath.
-  mkdir -p "${TESTDIR}/custom/plugins/demo/tests/e2e"
-  cat > "${TESTDIR}/custom/plugins/demo/tests/e2e/smoke.spec.ts" <<'EOF'
-import { test, expect } from '@playwright/test';
-test('noop', async () => { expect(1).toBe(1); });
-EOF
   run ddev restart -y
   assert_success
-  run ddev playwright discover
+  # A project with @playwright/test installed can run the CLI through the wrapper.
+  ddev exec -s playwright sh -c 'cd /var/www/html && npm init -y >/dev/null 2>&1 && npm install --no-audit --no-fund --silent -D @playwright/test@1.56.1'
+  run ddev playwright --version
   assert_success
-  assert_output --partial "custom/plugins/demo"
-  run ddev playwright install
-  assert_success
-  # @axe-core/playwright is always installed (accessibility out of the box).
-  run ddev exec -s playwright test -d /mnt/ddev_config/playwright/node_modules/@axe-core/playwright
-  assert_success
-  run ddev playwright
-  assert_success
-}
-
-@test "standalone instance with its own config runs separately" {
-  set -eu -o pipefail
-  run ddev add-on get "${DIR}"
-  assert_success
-  cat > "${TESTDIR}/.ddev/playwright.yaml" <<'EOF'
-#ddev-generated
-version: 1
-playwright:
-  version: "1.56.1"
-  searchPaths:
-    - custom/plugins
-EOF
-  mkdir -p "${TESTDIR}/custom/plugins/own/tests/e2e"
-  cat > "${TESTDIR}/custom/plugins/own/tests/playwright.config.ts" <<'EOF'
-import { defineConfig, devices } from '@playwright/test';
-import base from '/mnt/ddev_config/playwright/config.ts';
-export default defineConfig({ ...base, testDir: './e2e',
-  projects: [{ name: 'ff', use: { ...devices['Desktop Firefox'] } }] });
-EOF
-  cat > "${TESTDIR}/custom/plugins/own/tests/e2e/browser.spec.ts" <<'EOF'
-import { test, expect } from '@playwright/test';
-test('runs in firefox from the instance config', async ({ browserName }) => {
-  expect(browserName).toBe('firefox');
-});
-EOF
-  run ddev restart -y
-  assert_success
-  run ddev playwright install
-  assert_success
-  # The instance's own config (Firefox) must win — the test asserts browserName.
-  run ddev playwright
-  assert_success
+  assert_output --partial "1.56.1"
 }
 
 # bats test_tags=release

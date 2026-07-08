@@ -3,16 +3,17 @@ services:
   playwright:
     container_name: ddev-${DDEV_SITENAME}-playwright
     hostname: ${DDEV_SITENAME}-playwright
-    # Image tag is resolved from .ddev/playwright.yaml into .ddev/.env.playwright
-    # by the pre-start hook. The :latest fallback keeps this file valid even if
-    # that file is missing, so `ddev start` never breaks.
-    image: ${PLAYWRIGHT_DOCKER_IMAGE:-mcr.microsoft.com/playwright:latest}
+    # Playwright version = the Docker image tag. Change it by setting
+    # PLAYWRIGHT_IMAGE_TAG in .ddev/.env (e.g. `ddev dotenv set .ddev/.env
+    # --playwright-image-tag v1.57.0-noble`), then `ddev restart`. The default
+    # below is used when it is unset.
+    image: mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG:-v1.56.1-noble}
     command: ["tail", "-f", "/dev/null"]
     restart: "no"
     working_dir: /var/www/html
-    # Browsers ship preinstalled in the official image; point Playwright at them
-    # so nothing is ever downloaded into the project.
     environment:
+      # Browsers ship preinstalled in the official image; point Playwright at them
+      # so nothing is ever downloaded into the project.
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - VIRTUAL_HOST=$DDEV_HOSTNAME
       - DDEV_SITENAME=${DDEV_SITENAME}
@@ -20,24 +21,6 @@ services:
       # UI reachable at https://<site>.ddev.site:8078, report at :9324.
       - HTTP_EXPOSE=8077:8077,9323:9323
       - HTTPS_EXPOSE=8078:8077,9324:9323
-    # CMS test-suite variables (Shopware @shopware-ag/acceptance-test-suite,
-    # WordPress @wordpress/e2e-test-utils-playwright) are read DIRECTLY from the
-    # project's own env files, so credentials live in exactly ONE place:
-    # .env / .env.local / .env.test. `env_file` entries are merged in order (later
-    # wins), matching Symfony precedence (.env < .env.local < .env.test). All are
-    # optional (required:false) so non-CMS projects and missing files never break
-    # `ddev start`. The base-URL fallback file is FIRST so a real APP_URL / WP_BASE_URL
-    # in the project env overrides it. PLAYWRIGHT_CMS_ENV_DIR is the app's env dir,
-    # resolved by the pre-start hook (works whether the app is in the root or a subfolder).
-    env_file:
-      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.ddev-playwright-fallback.env
-        required: false
-      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env
-        required: false
-      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env.local
-        required: false
-      - path: ${PLAYWRIGHT_CMS_ENV_DIR:-.}/.env.test
-        required: false
     # These labels ensure this service is discoverable by DDEV.
     labels:
       com.ddev.site-name: ${DDEV_SITENAME}
@@ -45,14 +28,8 @@ services:
     external_links:
       - "ddev-router:${DDEV_SITENAME}.${DDEV_TLD}"
     volumes:
-      # Project root: the app is reachable at http://web from this container.
+      # Project root: the app is reachable at http://web from this container, and
+      # your Playwright install (package.json / node_modules / tests) lives here,
+      # managed entirely by you.
       - "../:/var/www/html"
-      # .ddev, providing playwright.paths.json + the active playwright.config.ts.
-      - ".:/mnt/ddev_config"
       - "ddev-global-cache:/mnt/ddev-global-cache"
-      # node_modules lives ONLY in this named volume: invisible on the host, not
-      # in the git repo, and never synced by Mutagen.
-      - "playwright-node-modules:/mnt/ddev_config/playwright/node_modules"
-
-volumes:
-  playwright-node-modules:

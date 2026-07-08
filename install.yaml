@@ -2,49 +2,16 @@ name: playwright
 
 project_files:
   - docker-compose.playwright.yaml
-  - config.playwright.yaml
   - commands/host/playwright
-  # The user-editable config lives prominently at .ddev/playwright.yaml.
-  - playwright.yaml
-  - playwright/defaults.yaml
-  - playwright/config/config.ts
-  - playwright/bin/resolve-config.sh
-  - playwright/bin/discover.mjs
 
 ddev_version_constraint: '>= v1.24.10'
 
 post_install_actions:
-  # NOTE: post_install_actions run with the working directory set to the project
-  # .ddev folder, so paths here are relative to .ddev (no ".ddev/" prefix).
-  #
-  # Resolve the desired Playwright version into .ddev/.env.playwright and write the
-  # .ddev/playwright/paths.json manifest, so the very first `ddev restart` already
-  # pulls the correct image.
-  - |
-    #ddev-description:Resolve Playwright version and write environment
-    bash playwright/bin/resolve-config.sh || true
-  # Activate the global Playwright config (only if the user has none yet).
-  - |
-    #ddev-description:Activate global Playwright config
-    if [ ! -f playwright/config.ts ]; then
-      cp playwright/config/config.ts playwright/config.ts
-    fi
   - |
     #ddev-description:Show next steps
-    echo "Playwright add-on installed."
-    echo "1. (Optional) edit .ddev/playwright.yaml to pin a version or change searchPaths."
-    echo "2. Run 'ddev restart'."
-    echo "3. Run 'ddev playwright install', then 'ddev playwright' to run tests, or 'ddev playwright --ui'."
-
-removal_actions:
-  # Runs with the working directory set to .ddev (paths are relative to it).
-  # Remove generated files only if they still carry the #ddev-generated marker.
-  # paths.json is JSON (no comments) and is removed by filename.
-  - |
-    #ddev-description:Remove generated Playwright files
-    # .env.playwright and paths.json are generated (no marker) — remove by name.
-    rm -f .env.playwright playwright/paths.json
-    # The active config.ts carries #ddev-generated only if the user hasn't edited it.
-    if [ -f playwright/config.ts ] && head -n1 playwright/config.ts | grep -q '#ddev-generated'; then
-      rm -f playwright/config.ts
-    fi
+    echo "Playwright add-on installed (bare container)."
+    echo "1. (Optional) pin a version: set PLAYWRIGHT_IMAGE_TAG in .ddev/.env"
+    echo "   (e.g. 'ddev dotenv set .ddev/.env --playwright-image-tag v1.57.0-noble'), then 'ddev restart'."
+    echo "2. Install Playwright yourself in your project (e.g. npm i -D @playwright/test) and add a playwright.config."
+    echo "3. Run tests with 'ddev playwright test', open the UI with 'ddev playwright --ui',"
+    echo "   or pass any Playwright CLI args through: 'ddev playwright <args>'."
