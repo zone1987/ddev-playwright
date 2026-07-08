@@ -77,6 +77,20 @@ px() {
   ddev exec -s playwright "$@"
 }
 
+# Read a boolean flag ("true"/"false") for <key> from the manifest. Portable
+# across BSD sed (macOS) and GNU sed: BSD sed does not support \| alternation in
+# BRE, so match "true" and "false" with two separate expressions instead.
+manifest_flag() {
+  # Usage: manifest_flag <key>  (echoes "true", "false", or empty)
+  key="$1"
+  [ -f "${MANIFEST}" ] || return 0
+  val="$(sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(true\\).*/\\1/p" "${MANIFEST}" 2>/dev/null | head -n1)"
+  if [ -z "${val}" ]; then
+    val="$(sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(false\\).*/\\1/p" "${MANIFEST}" 2>/dev/null | head -n1)"
+  fi
+  printf '%s' "${val}"
+}
+
 # Run `playwright <args>` inside the container with the module resolution pointed
 # at the central install. @playwright/test lives in the node_modules volume at
 # /mnt/ddev_config/playwright (CENTRAL, defined above), not in the project root, so
@@ -241,7 +255,7 @@ case "${SUBCMD}" in
     fi
 
     # 8. Shopware integration status.
-    is_sw="$(sed -n 's/.*"isShopware"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    is_sw="$(manifest_flag isShopware)"
     if [ "${is_sw}" = "true" ]; then
       app_url="$(px sh -c 'printf "%s" "${APP_URL:-}"' 2>/dev/null | tr -d '\r')"
       echo "${ok} Shopware detected (APP_URL=${app_url:-<unset>})"
@@ -258,7 +272,7 @@ case "${SUBCMD}" in
     fi
 
     # 9. WordPress integration status.
-    is_wp="$(sed -n 's/.*"isWordpress"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    is_wp="$(manifest_flag isWordpress)"
     if [ "${is_wp}" = "true" ]; then
       wp_url="$(px sh -c 'printf "%s" "${WP_BASE_URL:-}"' 2>/dev/null | tr -d '\r')"
       echo "${ok} WordPress detected (WP_BASE_URL=${wp_url:-<unset>})"
@@ -276,8 +290,8 @@ case "${SUBCMD}" in
     # Central install of @playwright/test at the resolved version.
     ver="${desired_version:-latest}"
     # Detect CMS from the manifest to also install the matching test packages.
-    is_sw="$(sed -n 's/.*"isShopware"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
-    is_wp="$(sed -n 's/.*"isWordpress"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "${MANIFEST}" 2>/dev/null | head -n1)"
+    is_sw="$(manifest_flag isShopware)"
+    is_wp="$(manifest_flag isWordpress)"
     # Build the dependency list: @playwright/test + always @axe-core/playwright
     # (accessibility testing out of the box) + CMS suites + user packages.
     deps="@playwright/test@${ver} @axe-core/playwright"
