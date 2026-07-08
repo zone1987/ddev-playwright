@@ -378,7 +378,6 @@ the generated `.env.playwright`, `playwright/config.ts` and `playwright/paths.js
 * [Playwright documentation](https://playwright.dev/docs/intro)
 * [DDEV documentation for add-ons](https://docs.ddev.com/en/stable/users/extend/additional-services/)
 * [DDEV Add-on Registry](https://addons.ddev.com/)
-* Architecture inspiration: [ochorocho/ddev-playwright](https://github.com/ochorocho/ddev-playwright)
 
 ## Credits
 
