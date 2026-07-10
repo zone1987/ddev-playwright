@@ -1,7 +1,7 @@
 # DDEV Playwright — Developer Guide
 
 This document is for **maintainers and contributors** of the `ddev-playwright` add-on. If you just
-want to *use* the add-on, see [`README.md`](README.md) instead.
+want to *use* the add-on, see [`README.md`](../README.md) instead.
 
 * [Repository layout](#repository-layout)
 * [How it fits together](#how-it-fits-together)
@@ -58,7 +58,7 @@ Re-running `ddev add-on get` re-copies the files, so you can iterate without rec
 ## Local testing
 
 The add-on is tested with [bats-core](https://bats-core.readthedocs.io/) in
-[`tests/test.bats`](tests/test.bats), which installs the add-on into a throwaway DDEV project and
+[`tests/test.bats`](../tests/test.bats), which installs the add-on into a throwaway DDEV project and
 asserts the service comes up and the CLI passthrough works.
 
 **Prerequisites:** [DDEV](https://docs.ddev.com), Docker, and the bats libraries:
@@ -93,14 +93,14 @@ bats ./tests/test.bats
 
 1. Branch off `main` and make your change.
 2. Run the tests locally (`bats ./tests/test.bats --filter-tags '!release'`).
-3. Open a pull request. The [`tests`](.github/workflows/tests.yml) workflow runs automatically.
+3. Open a pull request. The [`tests`](../.github/workflows/tests.yml) workflow runs automatically.
 
 Installed files carry a `#ddev-generated` marker so `ddev add-on get` can update them later. Keep
 that marker on any file the add-on installs.
 
 ## Releases
 
-Releases are **gated by the full test suite** — see [`release.yml`](.github/workflows/release.yml):
+Releases are **gated by the full test suite** — see [`release.yml`](../.github/workflows/release.yml):
 
 1. Push a version tag: `git tag v1.2.3 && git push origin v1.2.3`.
 2. The `test` job runs the bats suite against DDEV **stable and HEAD**.

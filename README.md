@@ -5,6 +5,8 @@
 
 # DDEV Playwright <!-- omit in toc -->
 
+> 🇩🇪 Diese README gibt es auch auf Deutsch: [`README_DE.md`](README_DE.md).
+
 * [What is DDEV Playwright?](#what-is-ddev-playwright)
 * [Installation](#installation)
 * [Pinning the Playwright version](#pinning-the-playwright-version)
@@ -12,7 +14,6 @@
   * [UI mode & reports](#ui-mode--reports)
 * [Setting up Playwright in your project](#setting-up-playwright-in-your-project)
   * [Shopware](#shopware)
-  * [Example: one project per plugin](#example-one-project-per-plugin)
   * [Ignore the results folder](#ignore-the-results-folder)
 * [How it works](#how-it-works)
 * [Removal](#removal)
@@ -59,8 +60,15 @@ ddev dotenv set .ddev/.env --playwright-image-tag v1.57.0-noble
 ddev restart
 ```
 
-Match this tag to the `@playwright/test` version you install in your project so the browsers and the
-runner agree.
+> [!IMPORTANT]
+> **The `@playwright/test` version in your `package.json` must match this image tag.** The browsers
+> ship preinstalled in the image (under `/ms-playwright`), and the container points Playwright at
+> them via `PLAYWRIGHT_BROWSERS_PATH`. If the versions differ, Playwright looks for a browser build
+> that isn't in the image and reports **"browsers not installed"** / `Executable doesn't exist` —
+> for example in UI mode on first launch. Do **not** fix this by running `ddev playwright install`:
+> that downloads the browsers non-persistently, so they're gone again after the next `ddev restart`.
+> Instead, pin the same version on both sides — e.g. image tag `v1.56.1-noble` ↔ `@playwright/test`
+> `1.56.1` — so the browsers and the runner agree and no install step is ever needed.
 
 ## Usage
 
@@ -100,40 +108,14 @@ directory: `cd shopware && ddev playwright test`.
 
 ### Shopware
 
-For Shopware, install the official acceptance test suite alongside Playwright:
+Shopware projects have their own step-by-step setup — creating an admin integration, wiring up the
+acceptance test suite, and placing tests inside each plugin/app. See the dedicated guide:
 
-```bash
-ddev exec -s playwright npm install -D @shopware-ag/acceptance-test-suite
-```
+**➡️ [Shopware guide](docs/SHOPWARE.md)** ([auf Deutsch](docs/SHOPWARE_DE.md))
 
-The suite reads its configuration from **environment variables** (`APP_URL`,
-`SHOPWARE_ACCESS_KEY_ID`, `SHOPWARE_SECRET_ACCESS_KEY`). Playwright does not load `.env` files on its
-own, so load them in your config. Put the credentials in **`.env.local`** (git-ignored) next to your
-`package.json`:
-
-```bash
-# shopware/.env.local
-SHOPWARE_ACCESS_KEY_ID="<your-shopware-integration-id>"
-SHOPWARE_SECRET_ACCESS_KEY="<your-shopware-integration-secret>"
-```
-
-Create the integration in the Shopware admin under **Settings → System → Integrations** (assign the
-**Administrator** role; the secret is shown only once).
-
-### Example: one project per plugin
-
-A `playwright.config.js` that loads `.env.local`, derives the base URL from the DDEV container, sets
-German admin language for the acceptance suite, and registers one Playwright project per plugin under
-`custom/static-plugins/*/tests/e2e`:
-
-A ready-to-use example config is provided at
-[`examples/shopware/playwright.config.js`](examples/shopware/playwright.config.js). It loads
-`.env.local`, derives the base URL from the DDEV container, sets German admin language for the
-acceptance suite, and registers **one Playwright project per plugin** under
-`custom/static-plugins/*/tests/e2e`. Copy it next to your `package.json` and adjust as needed.
-
-Your `package.json` needs `"type": "module"` for the example's `import` syntax (or convert it to
-`require`).
+A ready-to-use [`playwright.config.js`](examples/shopware/playwright.config.js),
+[`package.json`](examples/shopware/package.json) and [example tests](examples/shopware/tests) are
+provided under `examples/shopware/`.
 
 ### Ignore the results folder
 
@@ -166,7 +148,8 @@ Use the add-on **name** (`playwright`), not the repository slug.
 
 ## Resources
 
-* **Developing or contributing?** See [`README_DEV.md`](README_DEV.md).
+* **Using Shopware?** See the [Shopware guide](docs/SHOPWARE.md) ([auf Deutsch](docs/SHOPWARE_DE.md)).
+* **Developing or contributing?** See [`docs/README_DEV.md`](docs/README_DEV.md).
 * [Playwright documentation](https://playwright.dev/docs/intro)
 * [Shopware acceptance test suite](https://developer.shopware.com/docs/guides/development/testing/e2e-playwright/install-configure.html)
 * [DDEV documentation for add-ons](https://docs.ddev.com/en/stable/users/extend/additional-services/)
